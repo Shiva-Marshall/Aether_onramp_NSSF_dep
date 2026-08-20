@@ -23,7 +23,7 @@ k8s:
 
 core:
   standalone: true      # set to false to place under control of ROC
-  data_iface: ens18
+  data_iface: eth0
   values_file: "deps/5gc/roles/core/templates/sdcore-5g-values.yaml"
   ran_subnet: "172.20.0.0/16"    # set to empty string to get subnet from 'data_iface'
   helm:
@@ -35,13 +35,24 @@ core:
     core_subnet: "192.168.250.1/24"  # core subnet & gateway
     mode: af_packet      # Options: af_packet or dpdk
     multihop_gnb: false      # set to true to override default N3 subnet
-    default_upf:
+    helm:                    # chart used by 'make aether-add-upfs' for extra UPFs
+      local_charts: false
+      chart_ref: oci://ghcr.io/omec-project/bess-upf
+      chart_version: 1.7.2
+    values_file: "deps/5gc/roles/upf/templates/upf-5g-values.yaml"
+    default_upf:             # slice "default" (sst 1 / sd 010203), ns aether-5gc
       ip:
         access: "192.168.252.3"
         core:   "192.168.250.3"
       ue_ip_pool: "192.168.100.0/24"
+    additional_upfs:         # slice "slice2" (sst 2 / sd 010205), ns aether-upf-1
+      "1":
+        ip:
+          access: "192.168.252.6"
+          core:   "192.168.250.6"
+        ue_ip_pool: "192.168.101.0/24"
   amf:
-    ip: "10.76.28.113"
+    ip: "192.168.6.90"
 
 gnbsim:
   docker:
@@ -54,13 +65,27 @@ gnbsim:
         name: gnbnet
 
   router:
-    data_iface: ens18
+    data_iface: eth0
     macvlan:
       subnet_prefix: "172.20"
 
   servers:
     0:
       - "deps/gnbsim/config/gnbsim-default.yaml"
+
+ueransim:
+  docker:
+    container:
+      image: aetherproject/ueransim:rel-0.8.0
+      name: ueransim
+    network:
+      name: host          # required so uesimtun0 appears on the host
+  gnb:
+    ip: "172.20.0.2"      # must exist on the host; UPFs route 172.20.0.0/16 via 192.168.252.1
+  servers:
+    0:
+      gnb: "deps/ueransim/config/custom-gnb.yaml"
+      ue:  "deps/ueransim/config/custom-ue.yaml"
 
 amp:
   roc_models: "deps/amp/roles/roc-load/templates/roc-5g-models.json"

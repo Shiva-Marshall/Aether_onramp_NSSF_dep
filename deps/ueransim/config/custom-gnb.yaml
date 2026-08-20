@@ -18,6 +18,8 @@ amfConfigs:
 slices:
   - sst: 0x1
     sd: 0x010203
+  - sst: 0x2
+    sd: 0x010205
 
 # Indicates whether or not SCTP stream number errors should be ignored.
 ignoreStreamIds: true

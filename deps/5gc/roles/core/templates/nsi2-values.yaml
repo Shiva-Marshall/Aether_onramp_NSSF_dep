@@ -1,0 +1,112 @@
+# Network Slice Instance 2 (NSI-2) — a *second* SD-Core control plane holding
+# only an NRF and an SMF, deployed into namespace `aether-nsi2`.
+#
+# Purpose: demonstrate NSSF-driven NSI selection. The NSSF maps
+# sst=2/sd=010205 -> this NRF, the AMF discovers SMF-2 from it, and slice-2
+# PDU sessions are handled by SMF-2 instead of the SMF in aether-5gc.
+#
+# Everything else (AMF, AUSF, UDM, UDR, PCF, NSSF, webconsole, MongoDB, Kafka,
+# simapp, UPF) is reused from the aether-5gc release.
+
+omec-control-plane:
+  enable4G: false
+
+omec-sub-provision:
+  enable: false          # subscribers are provisioned by the aether-5gc simapp
+
+omec-user-plane:
+  enable: false          # UPFs already exist (aether-5gc, aether-upf-1)
+
+5g-ran-sim:
+  enable: false
+
+5g-control-plane:
+  enable5G: true
+  nodeSelectors:
+    enabled: false
+  resources:
+    enabled: false
+
+  kafka:
+    deploy: false        # reuse kafka in aether-5gc
+
+  mongodb:
+    deploy: false        # reuse mongodb in aether-5gc
+
+  config:
+    # Reuse the CA created by the aether-5gc release so the AMF there trusts
+    # the leaf certs issued here. The secret is copied into this namespace.
+    certs:
+      sharedCA:
+        existingPrivateSecret: "5g-control-plane-ca-private"
+
+    # Point at the existing MongoDB replicaset in aether-5gc, but use a
+    # SEPARATE database. Both NRFs persist their NF profiles in mongo, so
+    # sharing `name: aether` makes NRF-2 see NRF-1's registrations and the
+    # NSI separation silently collapses.
+    mongodb:
+      name: aether_nsi2
+      url: mongodb://mongodb-headless.aether-5gc:27017/?replicaSet=rs0
+      authKeysDbName: authentication
+      authUrl: mongodb://mongodb-headless.aether-5gc:27017/?replicaSet=rs0
+
+    managedByConfigPod:
+      enabled: true
+
+    # ---------- NFs NOT part of this NSI ----------
+    amf:
+      deploy: false
+    ausf:
+      deploy: false
+    pcf:
+      deploy: false
+    nssf:
+      deploy: false
+    udm:
+      deploy: false
+    udr:
+      deploy: false
+    webui:
+      deploy: false
+    sctplb:
+      deploy: false
+    upfadapter:
+      deploy: false
+    metricfunc:
+      deploy: false
+
+    # ---------- NRF-2 : this NSI's own service registry ----------
+    nrf:
+      deploy: true
+      cfgFiles:
+        nrfcfg.yaml:
+          configuration:
+            mongoDBStreamEnable: false
+            nfProfileExpiryEnable: false
+            nfKeepAliveTime: 60
+            webuiUri: http://webui.aether-5gc:5001
+            sbi:
+              # MUST be namespace-qualified: the AMF lives in aether-5gc and
+              # resolves this name from there.
+              registerIPv4: nrf.aether-nsi2
+
+    # ---------- SMF-2 : registers into NRF-2, not the default NRF ----------
+    smf:
+      deploy: true
+      cfgFiles:
+        smfcfg.yaml:
+          configuration:
+            smfName: SMF-NSI2
+            enableDBStore: true
+            enableNrfCaching: true
+            nrfUri: https://nrf.aether-nsi2:29510
+            webuiUri: http://webui.aether-5gc:5001
+            kafkaInfo:
+              brokerUri: kafka.aether-5gc
+              brokerPort: 9092
+              topicName: sdcore-data-source-smf
+            sbi:
+              # MUST be namespace-qualified, otherwise the AMF discovers this
+              # profile and then dials `smf` — which resolves to the SMF in
+              # aether-5gc, silently defeating the whole experiment.
+              registerIPv4: smf.aether-nsi2
