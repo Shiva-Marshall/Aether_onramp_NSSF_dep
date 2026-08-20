@@ -92,6 +92,11 @@ omec-control-plane:
         amfcfg.yaml:
           configuration:
             enableDBStore: true # Store AMF subscribers in the datastore
+            # The AMF caches NRF discovery results. With more than one NRF in
+            # play (NSI selection) the cache is not keyed by NRF URI, so a
+            # result fetched from NRF-2 can be served for a query that should
+            # have gone to NRF-1. Disable it for multi-NSI experiments.
+            enableNrfCaching: false
             networkFeatureSupport5GS: # 5gs Network Feature Support IE, refer to TS 24.501 sec. 9.11.3.5
               imsVoPS: 1 # IMS voice over PS session indicator (uinteger, range: 0~1)
             # security:
@@ -123,6 +128,29 @@ omec-control-plane:
     #  cfgFiles:
     #    pcfcfg.yaml:
     #      configuration:
+
+    # NSSF: map each S-NSSAI to the NRF of the Network Slice Instance that
+    # serves it. The AMF parses the returned nrfId and uses THAT NRF to
+    # discover the SMF -- see consumer/sm_context.go.
+    #   slice 1 (sst 1 / sd 010203) -> NRF-1, the default NRF in aether-5gc
+    #   slice 2 (sst 2 / sd 010205) -> NRF-2 in aether-nsi2  => SMF-2
+    nssf:
+      cfgFiles:
+        nssfcfg.yaml:
+          configuration:
+            nsiList:
+              - snssai:
+                  sst: 1
+                  sd: "010203"
+                nsiInformationList:
+                  - nrfId: https://nrf:29510/nnrf-nfm/v1/nf-instances
+                    nsiId: "1"
+              - snssai:
+                  sst: 2
+                  sd: "010205"
+                nsiInformationList:
+                  - nrfId: https://nrf.aether-nsi2:29510/nnrf-nfm/v1/nf-instances
+                    nsiId: "2"
 
     nrf:
       cfgFiles:
@@ -184,6 +212,8 @@ omec-sub-provision:
               sequenceNumber: "16f3b3f70fc2"
 
             # Configure Device Groups (ignored if provision-network-slice is disabled)
+            # user-group1 -> slice "default" (sst 1 / sd 010203) -> UPF "upf"      (ns aether-5gc)
+            # user-group2 -> slice "slice2"  (sst 2 / sd 010205) -> UPF "upf.aether-upf-1"
             device-groups:
             - name:  "user-group1"
               imsis:
@@ -212,6 +242,51 @@ omec-sub-provision:
                 - "208930100007522"
                 - "208930100007523"
                 - "208930100007524"
+              msisdns:
+                - "msisdn-9000000001"
+                - "msisdn-9000000002"
+                - "msisdn-9000000003"
+                - "msisdn-9000000004"
+                - "msisdn-9000000005"
+                - "msisdn-9000000006"
+                - "msisdn-9000000007"
+                - "msisdn-9000000008"
+                - "msisdn-9000000009"
+                - "msisdn-9000000010"
+                - "msisdn-9000000011"
+                - "msisdn-9000000012"
+                - "msisdn-9000000013"
+                - "msisdn-9000000014"
+                - "msisdn-9000000015"
+                - "msisdn-9000000016"
+                - "msisdn-9000000017"
+                - "msisdn-9000000018"
+                - "msisdn-9000000019"
+                - "msisdn-9000000020"
+                - "msisdn-9000000021"
+                - "msisdn-9000000022"
+                - "msisdn-9000000023"
+                - "msisdn-9000000024"
+                - "msisdn-9000000025"
+              ip-domain-name: "pool1"
+              ip-domains:
+                - dnn: internet
+                  dns-primary: "8.8.8.8"        # Value is sent to UE
+                  mtu: 1460                     # Value is sent to UE when PDU Session Established
+                  ue-ip-pool: {{ core.upf.default_upf.ue_ip_pool }}  # IP address pool for subscribers
+                  ue-dnn-qos:
+                    dnn-mbr-downlink: 1000      # UE level downlink QoS (Maximum bit rate per UE)
+                    dnn-mbr-uplink:   1000      # UE level uplink QoS (Maximum bit rate per UE)
+                    bitrate-unit: Mbps          # Unit for above QoS rates
+                    traffic-class:              # Default bearer QCI/ARP (not used in 5G)
+                      name: "platinum"
+                      qci: 9
+                      arp: 6
+                      pdb: 300
+                      pelr: 6
+              site-info: "enterprise"
+            - name:  "user-group2"
+              imsis:
                 - "208930100007525"
                 - "208930100007526"
                 - "208930100007527"
@@ -288,31 +363,6 @@ omec-sub-provision:
                 - "208930100007598"
                 - "208930100007599"
               msisdns:
-                - "msisdn-9000000001"
-                - "msisdn-9000000002"
-                - "msisdn-9000000003"
-                - "msisdn-9000000004"
-                - "msisdn-9000000005"
-                - "msisdn-9000000006"
-                - "msisdn-9000000007"
-                - "msisdn-9000000008"
-                - "msisdn-9000000009"
-                - "msisdn-9000000010"
-                - "msisdn-9000000011"
-                - "msisdn-9000000012"
-                - "msisdn-9000000013"
-                - "msisdn-9000000014"
-                - "msisdn-9000000015"
-                - "msisdn-9000000016"
-                - "msisdn-9000000017"
-                - "msisdn-9000000018"
-                - "msisdn-9000000019"
-                - "msisdn-9000000020"
-                - "msisdn-9000000021"
-                - "msisdn-9000000022"
-                - "msisdn-9000000023"
-                - "msisdn-9000000024"
-                - "msisdn-9000000025"
                 - "msisdn-9000000026"
                 - "msisdn-9000000027"
                 - "msisdn-9000000028"
@@ -388,12 +438,12 @@ omec-sub-provision:
                 - "msisdn-9000000098"
                 - "msisdn-9000000099"
                 - "msisdn-9000000100"
-              ip-domain-name: "pool1"
+              ip-domain-name: "pool2"
               ip-domains:
                 - dnn: internet
                   dns-primary: "8.8.8.8"        # Value is sent to UE
                   mtu: 1460                     # Value is sent to UE when PDU Session Established
-                  ue-ip-pool: {{ core.upf.default_upf.ue_ip_pool }}  # IP address pool for subscribers
+                  ue-ip-pool: {{ core.upf.additional_upfs['1'].ue_ip_pool }}  # IP address pool for subscribers
                   ue-dnn-qos:
                     dnn-mbr-downlink: 1000      # UE level downlink QoS (Maximum bit rate per UE)
                     dnn-mbr-uplink:   1000      # UE level uplink QoS (Maximum bit rate per UE)
@@ -410,13 +460,13 @@ omec-sub-provision:
 
             # Configure Network Slices (ignored if provision-network-slice is disabled)
             network-slices:
-            - name: "default"      # can be any unique slice name
-              slice-id:            # must match with slice configured in gNB, UE
+            - name: "default"
+              slice-id:
                 sd: "010203"
                 sst: 1
               site-device-group:
-              - "user-group1"   # All UEs in this device-group are assigned to this slice
-              # Applicaiton filters control what each user can access.
+              - "user-group1"
+              # Application filters control what each user can access.
               # Default, allow access to all applications
               application-filtering-rules:
               - rule-name: "ALLOW-ALL"
@@ -439,6 +489,36 @@ omec-sub-provision:
                 site-name: "enterprise"
                 upf:
                   upf-name: "upf"  # associated UPF for this slice. One UPF per Slice.
+                  upf-port: 8805
+            - name: "slice2"
+              slice-id:
+                sd: "010205"
+                sst: 2
+              site-device-group:
+              - "user-group2"
+              # Application filters control what each user can access.
+              # Default, allow access to all applications
+              application-filtering-rules:
+              - rule-name: "ALLOW-ALL"
+                priority: 250
+                action: "permit"
+                endpoint: "0.0.0.0/0"
+                traffic-class:
+                  qci: 9
+                  arp: 6
+              site-info:
+                # Provide gNBs and UPF details and also PLMN for the site
+                gNodeBs:
+                - name: "gnb1"
+                  tac: 1
+                - name: "gnb2"
+                  tac: 2
+                plmn:
+                  mcc: "208"
+                  mnc: "93"
+                site-name: "enterprise"
+                upf:
+                  upf-name: "upf.aether-upf-1"  # associated UPF for this slice. One UPF per Slice.
                   upf-port: 8805
 
 # Override values for omec-user-plane Helm Chart
